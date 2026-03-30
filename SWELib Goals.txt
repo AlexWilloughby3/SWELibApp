@@ -1,0 +1,13 @@
+SWELib Goals:
+
+1. get productivity tracker out
+2. finish the main formalization plan
+3. no lean representations of the data that's happening
+  a. this is because representing a huge amount of data as an object in lean is very memory intensive (functional programming in general)
+  b. track progress by seeing how the productivity tracker works
+  c. O(1) we're good
+4. migration?
+  a. out of scope for now (wait for google to release Python specification)
+  b. endpoint A -> (api gateway -> (route traffic) -> endpoint A or endpoint B where endpoint B = verified lean SWELib thing)
+  c. (theory crafting) inevitably languages like python will be optimized by running perf algorithm to automatically fix that
+5. 

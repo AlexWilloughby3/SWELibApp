@@ -1,0 +1,41 @@
+# Deployed to VM via SCP by the provisioner.
+# Two containers: the Lean server (api) and Postgres (db).
+services:
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_USER=productivity
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_DATABASE=productivity
+      - JWT_SECRET=${JWT_SECRET}
+      - HTTP_PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=productivity
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=productivity
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U productivity"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pg-data:
