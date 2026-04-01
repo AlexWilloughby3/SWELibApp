@@ -19,3 +19,15 @@ lean_lib Impl where
 lean_exe deploy where
   srcDir := "impl"
   root := `Impl.Deploy
+
+lean_exe server where
+  srcDir := "impl"
+  root := `Impl.Server
+  moreLinkArgs := #[
+    "-L" ++ (__dir__ / "ffi").toString,
+    "-lswelib_ffi", "-lprodtracker_ffi",
+    "-L/opt/homebrew/opt/openssl@3/lib", "-lssl", "-lcrypto",
+    "-L/opt/homebrew/lib/postgresql@14", "-lpq",
+    "-L/opt/homebrew/opt/curl/lib", "-lcurl",
+    "-L/opt/homebrew/opt/libssh2/lib", "-lssh2"
+  ]

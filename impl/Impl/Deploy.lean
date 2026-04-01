@@ -1,10 +1,13 @@
 import SWELibImpl.Cloud.GceVm
 import Spec
+import Impl.Containers
+import Impl.StartupScript
 
 /-!
 # GCE VM Deployment
 
-Provisions a GCE VM using SWELib's formally-specified GceVm client.
+Provisions a GCE VM using SWELib's formally-specified GceVm client,
+then deploys Docker containers via `gcloud compute ssh`.
 Reads configuration from environment variables so it works both locally
 and in GitHub Actions.
 -/
@@ -14,6 +17,9 @@ namespace Impl.Deploy
 open SWELibImpl.Cloud.GceVm
 open SWELibImpl.Cloud.GceVmJson (vmStatusToString)
 open Spec.Infra (DeployConfig)
+open SWELib.OS.Isolation (SshResult)
+open Impl.Containers
+open Impl.StartupScript
 
 /-- Read deployment config from environment variables. -/
 def readConfig : IO DeployConfig := do
@@ -65,19 +71,96 @@ def ensureRunning (h : VMHandle) : IO Unit := do
     IO.println "VM resumed."
   | other =>
     IO.println s!"VM is in state {vmStatusToString other}, waiting for it to settle..."
-    -- In a real deploy we'd poll; for now just report
     throw <| IO.userError s!"Cannot deploy: VM is in transient state {vmStatusToString other}"
+
+/-- Run a command on the VM via gcloud compute ssh. Throws on non-zero exit. -/
+def sshRun (h : VMHandle) (command : String) : IO SshResult := do
+  IO.println s!"[ssh] {command.take 80}..."
+  let result ← sshInstance h command { strictHostKeyChecking := false }
+  if result.exitCode != 0 then
+    IO.eprintln s!"[ssh stderr] {result.stderr}"
+    throw <| IO.userError s!"SSH command failed (exit {result.exitCode})"
+  return result
+
+/-- Deploy Docker containers onto the VM via SSH.
+    Generates docker run commands from typed DockerRunConfig values
+    and executes them on the VM. -/
+def deployContainers (h : VMHandle) (env : ContainerEnv) : IO Unit := do
+  let pgCfg := postgresConfig env
+  let apiCfg := backendConfig env
+  let script := generateProvisionScript #[pgCfg, apiCfg]
+  IO.println "Deploying containers to VM..."
+  let _ ← sshRun h script
+  IO.println "Containers deployed."
+
+/-- Run a soft SSH command (don't throw on non-zero exit). -/
+def sshQuery (h : VMHandle) (command : String) : IO SshResult :=
+  sshInstance h command { strictHostKeyChecking := false }
+
+/-- Check container health and restart any that are not running.
+    Returns the number of containers that had to be restarted. -/
+def checkAndRestart (h : VMHandle) (env : ContainerEnv) : IO Nat := do
+  let containers := #[postgresConfig env, backendConfig env]
+  let mut restartCount := 0
+  for cfg in containers do
+    let fmt := "{{.State.Running}}"
+    let result ← sshQuery h
+      s!"sudo docker inspect --format '{fmt}' {cfg.name} 2>/dev/null || echo missing"
+    let status := result.stdout.trimAscii.toString
+    if status != "true" then
+      IO.println s!"Container '{cfg.name}' is {status}. Restarting..."
+      let runCmd := "sudo docker rm -f " ++ shellEscape cfg.name ++
+        " 2>/dev/null || true && sudo " ++ dockerRunCommand cfg
+      let restart ← sshQuery h runCmd
+      if restart.exitCode == 0 then
+        IO.println s!"Container '{cfg.name}' restarted."
+      else
+        IO.eprintln s!"Failed to restart '{cfg.name}': {restart.stderr}"
+      restartCount := restartCount + 1
+    else
+      IO.println s!"Container '{cfg.name}' is running."
+  return restartCount
+
+/-- Supervisor loop: poll container health at a fixed interval.
+    Runs until interrupted or `maxIterations` is reached (0 = unlimited). -/
+def superviseLoop (h : VMHandle) (env : ContainerEnv)
+    (intervalSecs : Nat := 30) (maxIterations : Nat := 0) : IO Unit := do
+  IO.println s!"Supervising containers (interval: {intervalSecs}s)..."
+  let mut i := 0
+  while maxIterations == 0 || i < maxIterations do
+    let restarted ← checkAndRestart h env
+    if restarted > 0 then
+      IO.println s!"[iter {i + 1}] Restarted {restarted} container(s)."
+    else
+      IO.println s!"[iter {i + 1}] All containers healthy."
+    IO.sleep (intervalSecs * 1000).toUInt32
+    i := i + 1
 
 end Impl.Deploy
 
-open Impl.Deploy SWELibImpl.Cloud.GceVm SWELibImpl.Cloud.GceVmJson in
+open Impl.Deploy Impl.Containers SWELibImpl.Cloud.GceVm SWELibImpl.Cloud.GceVmJson in
 def main (args : List String) : IO Unit := do
   match args with
   | ["deploy"] => do
     let cfg ← readConfig
+    let containerEnv ← readContainerEnv
     let h ← ensureVM cfg
     ensureRunning h
-    IO.println "Deploy complete. VM is running and ready."
+    deployContainers h containerEnv
+    IO.println "Deploy complete. VM is running with containers."
+  | ["containers"] => do
+    let cfg ← readConfig
+    let containerEnv ← readContainerEnv
+    let h ← attachInstance cfg.project cfg.zone cfg.vmName
+    ensureRunning h
+    deployContainers h containerEnv
+    IO.println "Container redeployment complete."
+  | ["supervise"] => do
+    let cfg ← readConfig
+    let containerEnv ← readContainerEnv
+    let h ← attachInstance cfg.project cfg.zone cfg.vmName
+    ensureRunning h
+    superviseLoop h containerEnv
   | ["status"] => do
     let cfg ← readConfig
     let h ← attachInstance cfg.project cfg.zone cfg.vmName
@@ -100,9 +183,11 @@ def main (args : List String) : IO Unit := do
     deleteInstance h
     IO.println "VM deleted."
   | _ => do
-    IO.println "Usage: deploy [deploy|status|stop|delete]"
+    IO.println "Usage: deploy [deploy|containers|supervise|status|stop|delete]"
     IO.println ""
-    IO.println "  deploy  — Create or start the VM"
-    IO.println "  status  — Show current VM state"
-    IO.println "  stop    — Stop the VM"
-    IO.println "  delete  — Stop and delete the VM"
+    IO.println "  deploy      — Create/start VM and deploy containers"
+    IO.println "  containers  — Redeploy containers on running VM"
+    IO.println "  supervise   — Poll container health, restart failures"
+    IO.println "  status      — Show current VM state"
+    IO.println "  stop        — Stop the VM"
+    IO.println "  delete      — Stop and delete the VM"

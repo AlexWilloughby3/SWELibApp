@@ -10,6 +10,9 @@ env:
   GCP_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
   VM_NAME: ${{ vars.VM_NAME || 'prodtracker-vm' }}
   VM_MACHINE_TYPE: ${{ vars.VM_MACHINE_TYPE || 'e2-small' }}
+  PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  BACKEND_IMAGE: ${{ vars.BACKEND_IMAGE }}
 
 jobs:
   build:
