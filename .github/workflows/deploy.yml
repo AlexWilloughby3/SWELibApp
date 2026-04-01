@@ -1,0 +1,71 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+  GCP_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+  VM_NAME: ${{ vars.VM_NAME || 'prodtracker-vm' }}
+  VM_MACHINE_TYPE: ${{ vars.VM_MACHINE_TYPE || 'e2-small' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SWELibApp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/SWELib
+          path: SWELib
+
+      - name: Install elan
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libpq-dev libcurl4-openssl-dev libssh2-1-dev
+
+      - name: Build
+        working-directory: SWELibApp
+        run: lake build deploy
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy
+          path: SWELibApp/.lake/build/bin/deploy
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deploy
+
+      - name: Make binary executable
+        run: chmod +x deploy
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy VM
+        run: ./deploy deploy

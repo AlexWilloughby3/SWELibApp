@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SWELibApp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/SWELib
+          path: SWELib
+
+      - name: Install elan
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libpq-dev libcurl4-openssl-dev libssh2-1-dev
+
+      - name: Build spec
+        working-directory: SWELibApp
+        run: lake build Spec
+
+      - name: Build impl
+        working-directory: SWELibApp
+        run: lake build deploy
