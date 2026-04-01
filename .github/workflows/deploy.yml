@@ -37,6 +37,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev libpq-dev libcurl4-openssl-dev libssh2-1-dev
 
+      - name: Cache Lake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            SWELib/.lake
+            SWELibApp/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('SWELib/lean-toolchain', 'SWELib/lakefile.lean', 'SWELibApp/lakefile.lean') }}-${{ hashFiles('SWELib/**/*.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('SWELib/lean-toolchain', 'SWELib/lakefile.lean', 'SWELibApp/lakefile.lean') }}-
+
       - name: Build
         working-directory: SWELibApp
         run: lake build deploy
