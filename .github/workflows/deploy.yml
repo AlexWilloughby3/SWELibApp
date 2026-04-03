@@ -12,7 +12,6 @@ env:
   VM_MACHINE_TYPE: ${{ vars.VM_MACHINE_TYPE || 'e2-small' }}
   PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
   JWT_SECRET: ${{ secrets.JWT_SECRET }}
-  BACKEND_IMAGE: ${{ vars.BACKEND_IMAGE }}
 
 jobs:
   build:

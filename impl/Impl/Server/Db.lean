@@ -40,13 +40,13 @@ where
   readParams : IO ConnectionParameters := do
     let host ← IO.getEnv "PG_HOST"
     let port ← IO.getEnv "PG_PORT"
-    let dbname ← IO.getEnv "PG_DBNAME"
+    let dbname ← IO.getEnv "PG_DATABASE"
     let user ← IO.getEnv "PG_USER"
     let password ← IO.getEnv "PG_PASSWORD"
     pure {
       host := host
       port := port.bind (·.toNat?)
-      dbname := dbname <|> some "prodtracker"
+      dbname := dbname <|> some "productivity"
       user := user <|> some "postgres"
       password := password
     }

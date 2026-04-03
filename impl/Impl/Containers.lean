@@ -5,8 +5,8 @@ import SWELib.Cloud.Docker
 
 Typed `DockerRunConfig` definitions for the two containers that run on
 the GCE VM: a PostgreSQL database and the backend API server.
-These replace the old `docker-compose.yml` with SWELib-native types
-that are validated and serialized via `serializeFlags`.
+The backend Dockerfile is defined in Lean using SWELib's
+`DockerfileInstruction` types and built directly on the VM.
 -/
 
 namespace Impl.Containers
@@ -17,7 +17,6 @@ open SWELib.Cloud.Docker
 structure ContainerEnv where
   pgPassword : String
   jwtSecret : String
-  backendImage : String
 
 /-- Read container environment from env vars. -/
 def readContainerEnv : IO ContainerEnv := do
@@ -25,15 +24,67 @@ def readContainerEnv : IO ContainerEnv := do
     |>.map (·.getD "")
   let jwtSecret ← IO.getEnv "JWT_SECRET"
     |>.map (·.getD "")
-  let backendImage ← IO.getEnv "BACKEND_IMAGE"
-    |>.map (·.getD "")
   if pgPassword.isEmpty then
     throw <| IO.userError "PG_PASSWORD environment variable is required"
   if jwtSecret.isEmpty then
     throw <| IO.userError "JWT_SECRET environment variable is required"
-  if backendImage.isEmpty then
-    throw <| IO.userError "BACKEND_IMAGE environment variable is required"
-  return { pgPassword, jwtSecret, backendImage }
+  return { pgPassword, jwtSecret }
+
+/-- The backend Dockerfile, defined as typed instructions. -/
+def backendDockerfile : Dockerfile := #[
+  .from "debian:12-slim",
+  .expose 8000,
+  .cmd #["sleep", "infinity"]
+]
+
+/-- The image tag used for the locally-built backend image. -/
+def backendImageTag : String := "prodtracker-api:latest"
+
+/-- Render a `DockerfileInstruction` to its textual form. -/
+def renderInstruction : DockerfileInstruction → String
+  | .from image asName =>
+    if asName.isEmpty then s!"FROM {image}" else s!"FROM {image} AS {asName}"
+  | .run cmd shell =>
+    if shell then s!"RUN {" ".intercalate cmd.toList}"
+    else s!"RUN {reprJsonArray cmd}"
+  | .copy srcs dest from_ =>
+    let fromClause := if from_.isEmpty then "" else s!"--from={from_} "
+    s!"COPY {fromClause}{" ".intercalate srcs.toList} {dest}"
+  | .add srcs dest =>
+    s!"ADD {" ".intercalate srcs.toList} {dest}"
+  | .env key value => s!"ENV {key}={value}"
+  | .workdir path => s!"WORKDIR {path}"
+  | .expose port protocol => s!"EXPOSE {port}/{protocol}"
+  | .cmd args shell =>
+    if shell then s!"CMD {" ".intercalate args.toList}"
+    else s!"CMD {reprJsonArray args}"
+  | .entrypoint args shell =>
+    if shell then s!"ENTRYPOINT {" ".intercalate args.toList}"
+    else s!"ENTRYPOINT {reprJsonArray args}"
+  | .arg name default_ =>
+    match default_ with
+    | some d => s!"ARG {name}={d}"
+    | none => s!"ARG {name}"
+  | .label key value => s!"LABEL {key}={value}"
+  | .volume path => s!"VOLUME {path}"
+  | .user user group =>
+    if group.isEmpty then s!"USER {user}" else s!"USER {user}:{group}"
+  | .healthcheck cmd interval timeout startPeriod retries =>
+    match cmd with
+    | none => "HEALTHCHECK NONE"
+    | some args =>
+      let opts := s!"--interval={interval}s --timeout={timeout}s --start-period={startPeriod}s --retries={retries}"
+      s!"HEALTHCHECK {opts} CMD {" ".intercalate args.toList}"
+  | .shell args => s!"SHELL {reprJsonArray args}"
+  | .stopsignal signal => s!"STOPSIGNAL {signal}"
+where
+  reprJsonArray (arr : Array String) : String :=
+    let elems := arr.toList.map (fun s => s!"\"{s}\"")
+    "[" ++ ", ".intercalate elems ++ "]"
+
+/-- Render a full Dockerfile to a string. -/
+def renderDockerfile (df : Dockerfile) : String :=
+  "\n".intercalate ((df : Array DockerfileInstruction).toList.map renderInstruction)
 
 /-- PostgreSQL 16 container configuration. -/
 def postgresConfig (env : ContainerEnv) : DockerRunConfig := {
@@ -55,7 +106,7 @@ def postgresConfig (env : ContainerEnv) : DockerRunConfig := {
 
 /-- Backend API server container configuration. -/
 def backendConfig (env : ContainerEnv) : DockerRunConfig := {
-  image := env.backendImage
+  image := backendImageTag
   name := "prodtracker-api"
   networkMode := "host"
   env := #[
