@@ -6,17 +6,21 @@ package ProdTracker where
 
 require SWELib from ".." / "SWELib"
 
-/-- macOS Homebrew library search paths (no-op on Linux where libs are in standard paths). -/
-private def brewLibPaths : Array String :=
+/-- Platform-specific library search paths.
+    Lean's bundled clang uses its own sysroot, so we must explicitly provide
+    -L paths to system libraries on both macOS (Homebrew) and Linux. -/
+private def libSearchPaths : Array String :=
   if System.Platform.isOSX then #[
     "-L/opt/homebrew/opt/openssl@3/lib",
     "-L/opt/homebrew/opt/libssh2/lib",
     "-L/opt/homebrew/opt/curl/lib",
     "-L/opt/homebrew/lib/postgresql@18"
-  ] else #[]
+  ] else #[
+    "-L/usr/lib/x86_64-linux-gnu"
+  ]
 
 private def nativeLinkArgs : Array String :=
-  brewLibPaths ++ #["-lssl", "-lcrypto", "-lpq", "-lcurl", "-lssh2"]
+  libSearchPaths ++ #["-lssl", "-lcrypto", "-lpq", "-lcurl", "-lssh2"]
 
 lean_lib Spec where
   srcDir := "spec"
