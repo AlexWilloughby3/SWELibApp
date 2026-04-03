@@ -24,7 +24,7 @@ def main : IO Unit := do
   let db ← Impl.Server.Db.connect
   Impl.Server.Db.runMigrations db
   let app := buildApp appDef allRouters
-  let registry := buildRegistry
+  let registry := buildRegistry db
   let server ← SWELibImpl.Networking.FastApi.Server.serve app registry (port := 8000)
   IO.println "ProdTracker API running on http://0.0.0.0:8000"
   IO.println "Docs: http://0.0.0.0:8000/docs"

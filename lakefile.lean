@@ -23,3 +23,10 @@ lean_exe deploy where
 lean_exe server where
   srcDir := "impl"
   root := `Impl.Server
+  moreLinkArgs := #[
+    "-L/opt/homebrew/opt/openssl@3/lib",
+    "-L/opt/homebrew/opt/libssh2/lib",
+    "-L/opt/homebrew/opt/curl/lib",
+    "-L/opt/homebrew/lib/postgresql@18",
+    "-lssl", "-lcrypto", "-lpq", "-lcurl", "-lssh2"
+  ]

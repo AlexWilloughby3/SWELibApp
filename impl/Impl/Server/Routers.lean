@@ -2,6 +2,9 @@ import SWELib.Networking.FastApi
 import SWELib.Networking.Http
 import SWELibImpl.Networking.FastApi.CallableRegistry
 import SWELibImpl.Networking.FastApi.Router
+import Impl.Server.Db
+import Impl.Server.Handlers.Health
+import Impl.Server.Handlers.Auth
 
 /-!
 # Router Definitions
@@ -15,6 +18,17 @@ open SWELib.Networking.FastApi
 open SWELib.Networking.Http
 open SWELibImpl.Networking.FastApi.CallableRegistry
 open SWELibImpl.Networking.FastApi.Router
+open Impl.Server.Db
+
+-- Health check route
+
+def healthRouter : APIRouter := {
+  «prefix» := ""
+  tags := ["health"]
+  routes := [
+    { path := ⟨"/health"⟩, method := "GET", operationId := some "health_check" }
+  ]
+}
 
 -- Auth routes (no auth required)
 
@@ -81,7 +95,7 @@ def goalRouter : APIRouter := {
 }
 
 def allRouters : List APIRouter :=
-  [authRouter, userRouter, sessionRouter, categoryRouter, goalRouter]
+  [healthRouter, authRouter, userRouter, sessionRouter, categoryRouter, goalRouter]
 
 /-- Placeholder handler that returns 501 Not Implemented. -/
 def stubHandler : HandlerFn := fun _req => do
@@ -94,10 +108,12 @@ def stubHandler : HandlerFn := fun _req => do
 
 /-- Register all route handlers in the callable registry.
     Initially all handlers are stubs; they get replaced as we implement each domain. -/
-def buildRegistry : CallableRegistry :=
+def buildRegistry (db : DbConn) : CallableRegistry :=
   let reg := CallableRegistry.empty
+  -- Health
+  let reg := reg.registerHandler (routeKey "GET" "/health") Handlers.Health.healthCheck
   -- Auth
-  let reg := reg.registerHandler (routeKey "POST" "/auth/register") stubHandler
+  let reg := reg.registerHandler (routeKey "POST" "/auth/register") (Handlers.Auth.register db)
   let reg := reg.registerHandler (routeKey "POST" "/auth/verify") stubHandler
   let reg := reg.registerHandler (routeKey "POST" "/auth/login") stubHandler
   let reg := reg.registerHandler (routeKey "POST" "/auth/forgot-password") stubHandler

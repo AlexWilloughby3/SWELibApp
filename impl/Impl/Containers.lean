@@ -30,11 +30,19 @@ def readContainerEnv : IO ContainerEnv := do
     throw <| IO.userError "JWT_SECRET environment variable is required"
   return { pgPassword, jwtSecret }
 
-/-- The backend Dockerfile, defined as typed instructions. -/
+/-- The backend Dockerfile, defined as typed instructions.
+    Expects the `server` binary in the Docker build context. -/
 def backendDockerfile : Dockerfile := #[
   .from "debian:12-slim",
+  .run #["apt-get", "update", "-y"] true,
+  .run #["apt-get", "install", "-y", "--no-install-recommends",
+         "libpq5", "libssl3", "libcurl4", "libssh2-1", "ca-certificates"] true,
+  .run #["rm", "-rf", "/var/lib/apt/lists/*"] true,
+  .workdir "/app",
+  .copy #["server"] "/app/server" "",
+  .run #["chmod", "+x", "/app/server"] true,
   .expose 8000,
-  .cmd #["sleep", "infinity"]
+  .cmd #["/app/server"] false
 ]
 
 /-- The image tag used for the locally-built backend image. -/
