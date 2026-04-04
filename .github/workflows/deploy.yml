@@ -49,17 +49,13 @@ jobs:
 
       - name: Build
         working-directory: SWELibApp
-        run: |
-          lake build deploy
-          lake build server
+        run: lake build deploy
 
-      - name: Upload binaries
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: binaries
-          path: |
-            SWELibApp/.lake/build/bin/deploy
-            SWELibApp/.lake/build/bin/server
+          name: deploy
+          path: SWELibApp/.lake/build/bin/deploy
 
   deploy:
     needs: build
@@ -70,12 +66,10 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: binaries
+          name: deploy
 
-      - name: Make binaries executable
-        run: |
-          chmod +x SWELibApp/.lake/build/bin/deploy
-          chmod +x SWELibApp/.lake/build/bin/server
+      - name: Make binary executable
+        run: chmod +x deploy
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -87,6 +81,4 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy VM
-        env:
-          SERVER_BINARY_PATH: SWELibApp/.lake/build/bin/server
-        run: SWELibApp/.lake/build/bin/deploy deploy
+        run: ./deploy deploy

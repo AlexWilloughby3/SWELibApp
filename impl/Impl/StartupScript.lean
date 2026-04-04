@@ -25,15 +25,27 @@ def dockerRunCommand (cfg : DockerRunConfig) : String :=
   let escaped := flags.map shellEscape
   "docker run " ++ " ".intercalate escaped.toList
 
-/-- Generate the script fragment that writes the Dockerfile and builds the image. -/
+/-- GitHub org/user that owns the repos (read from GITHUB_REPO_OWNER env var in CI,
+    defaults to "AlexWilloughby3"). -/
+def repoOwner : String := "AlexWilloughby3"
+
+/-- Generate the script fragment that clones sources, writes the Dockerfile,
+    and builds the image. The Dockerfile itself installs Lean and runs
+    `lake build server`, so the type checker formally verifies all proofs. -/
 def generateBuildScript (df : Dockerfile) (tag : String) : String :=
   let content := renderDockerfile df
   let buildDir := "/tmp/prodtracker-build"
   String.intercalate "\n" [
+    s!"rm -rf {buildDir}",
     s!"mkdir -p {buildDir}",
+    -- Clone source repos into Docker build context
+    s!"git clone --depth 1 https://github.com/{repoOwner}/SWELib.git {buildDir}/SWELib",
+    s!"git clone --depth 1 https://github.com/{repoOwner}/SWELibApp.git {buildDir}/SWELibApp",
+    -- Write the Dockerfile
     s!"cat > {buildDir}/Dockerfile << 'DOCKERFILE_EOF'",
     content,
     "DOCKERFILE_EOF",
+    -- Build (this runs lake build server inside Docker, verifying all proofs)
     s!"sudo docker build -t {shellEscape tag} {buildDir}"
   ]
 

@@ -1,7 +1,8 @@
 # SWELibApp — Productivity Tracker
 # Lean 4 with formal specs via SWELib
 
-.PHONY: build build-spec build-impl clean deploy status stop delete update
+.PHONY: build build-spec build-impl build-server clean deploy status stop delete update
+.PHONY: up down health reset logs
 
 # ── Build ──────────────────────────────────────────────────────────
 
@@ -12,6 +13,27 @@ build-spec:
 
 build-impl:
 	lake build deploy
+
+build-server:
+	lake build server
+
+# ── Local Docker ───────────────────────────────────────────────────
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+health:
+	@curl -sf http://localhost:8000/health && echo || echo "Server not responding"
+
+reset:
+	docker compose down -v
+	docker compose up -d --build
+
+logs:
+	docker compose logs -f
 
 # ── Deploy (requires GCP_PROJECT env var) ──────────────────────────
 

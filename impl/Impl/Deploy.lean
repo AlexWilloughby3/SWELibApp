@@ -82,27 +82,11 @@ def sshRun (h : VMHandle) (command : String) : IO SshResult := do
     throw <| IO.userError s!"SSH command failed (exit {result.exitCode})"
   return result
 
-/-- Path to the server binary (set via SERVER_BINARY_PATH env var, or default). -/
-def serverBinaryPath : IO String := do
-  let path ← IO.getEnv "SERVER_BINARY_PATH"
-  pure (path.getD ".lake/build/bin/server")
-
 /-- Deploy Docker containers onto the VM via SSH.
-    SCPs the server binary to the VM's Docker build context,
-    then generates docker run commands from typed DockerRunConfig values
-    and executes them on the VM. -/
+    The provision script clones the source repos and runs `docker build`,
+    which installs Lean and builds the server inside the container —
+    formally verifying all proofs before producing the binary. -/
 def deployContainers (h : VMHandle) (env : ContainerEnv) : IO Unit := do
-  let buildDir := "/tmp/prodtracker-build"
-  -- Ensure build directory exists on VM
-  let _ ← sshRun h s!"mkdir -p {buildDir}"
-  -- SCP the server binary to the VM's Docker build context
-  let binPath ← serverBinaryPath
-  IO.println s!"Uploading server binary ({binPath}) to VM..."
-  let scpResult ← scpToInstance h [binPath] s!"{buildDir}/server"
-  if scpResult.exitCode != 0 then
-    IO.eprintln s!"[scp stderr] {scpResult.stderr}"
-    throw <| IO.userError s!"SCP failed (exit {scpResult.exitCode})"
-  IO.println "Server binary uploaded."
   let pgCfg := postgresConfig env
   let apiCfg := backendConfig env
   let script := generateProvisionScript #[pgCfg, apiCfg]

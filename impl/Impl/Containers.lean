@@ -30,17 +30,30 @@ def readContainerEnv : IO ContainerEnv := do
     throw <| IO.userError "JWT_SECRET environment variable is required"
   return { pgPassword, jwtSecret }
 
-/-- The backend Dockerfile, defined as typed instructions.
-    Expects the `server` binary in the Docker build context. -/
+/-- The backend Dockerfile as a multi-stage build.
+    Stage 1 (builder): installs Lean toolchain + system dev libs, clones source,
+    and runs `lake build server` — the type checker verifies all proofs.
+    Stage 2 (runtime): slim image with only the binary + runtime libs. -/
 def backendDockerfile : Dockerfile := #[
-  .from "debian:12-slim",
-  .run #["apt-get", "update", "-y"] true,
-  .run #["apt-get", "install", "-y", "--no-install-recommends",
-         "libpq5", "libssl3", "libcurl4", "libssh2-1", "ca-certificates"] true,
-  .run #["rm", "-rf", "/var/lib/apt/lists/*"] true,
+  -- Stage 1: build and formally verify
+  .from "debian:12-slim" "builder",
+  .run #["apt-get update -y && apt-get install -y",
+         "curl git build-essential pkg-config",
+         "libssl-dev libpq-dev libcurl4-openssl-dev libssh2-1-dev"] true,
+  .run #["curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none"] true,
+  .env "PATH" "/root/.elan/bin:$PATH",
+  .workdir "/build",
+  .copy #["SWELib"] "/build/SWELib" "",
+  .copy #["SWELibApp"] "/build/SWELibApp" "",
+  .workdir "/build/SWELibApp",
+  .run #["lake build server"] true,
+  -- Stage 2: runtime
+  .from "debian:12-slim" "",
+  .run #["apt-get update -y && apt-get install -y --no-install-recommends",
+         "libpq5 libssl3 libcurl4 libssh2-1 ca-certificates",
+         "&& rm -rf /var/lib/apt/lists/*"] true,
   .workdir "/app",
-  .copy #["server"] "/app/server" "",
-  .run #["chmod", "+x", "/app/server"] true,
+  .copy #["/build/SWELibApp/.lake/build/bin/server"] "/app/server" "builder",
   .expose 8000,
   .cmd #["/app/server"] false
 ]
