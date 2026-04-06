@@ -90,20 +90,39 @@ def runMigrations (db : DbConn) : IO Unit := do
     CREATE TABLE IF NOT EXISTS users (
       email TEXT PRIMARY KEY,
       hashed_password TEXT NOT NULL,
+      display_name TEXT,
+      show_on_leaderboard BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )"
+  -- Add columns if migrating from older schema
+  execDDL db "
+    DO $$ BEGIN
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS show_on_leaderboard BOOLEAN NOT NULL DEFAULT true;
+    EXCEPTION WHEN others THEN NULL;
+    END $$"
   execDDL db "
     CREATE TABLE IF NOT EXISTS pending_registrations (
       email TEXT PRIMARY KEY,
       hashed_password TEXT NOT NULL,
       verification_code TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes')
+    )"
+  execDDL db "
+    CREATE TABLE IF NOT EXISTS verification_codes (
+      email TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes')
     )"
   execDDL db "
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       token TEXT PRIMARY KEY,
       email TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour'),
+      used INTEGER NOT NULL DEFAULT 0
     )"
   execDDL db "
     CREATE TABLE IF NOT EXISTS categories (

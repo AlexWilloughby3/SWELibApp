@@ -12,6 +12,8 @@ namespace Impl.Server.Models
 structure User where
   email : String
   hashedPassword : String
+  displayName : Option String := none
+  showOnLeaderboard : Bool := true
   createdAt : String
   deriving Repr
 
@@ -20,6 +22,13 @@ structure PendingRegistration where
   hashedPassword : String
   verificationCode : String
   createdAt : String
+  deriving Repr
+
+structure VerificationCode where
+  email : String
+  code : String
+  createdAt : String
+  expiresAt : String
   deriving Repr
 
 structure FocusSession where
@@ -55,13 +64,20 @@ structure PasswordResetToken where
   token : String
   email : String
   createdAt : String
+  expiresAt : String
+  used : Bool := false
   deriving Repr
 
 -- JSON serialization helpers
 
 open Lean Json in
+/-- Public user representation (no password). -/
 def User.toJson (u : User) : Json :=
-  .mkObj [("email", .str u.email), ("created_at", .str u.createdAt)]
+  .mkObj [
+    ("email", .str u.email),
+    ("display_name", match u.displayName with | some n => .str n | none => .null),
+    ("show_on_leaderboard", .bool u.showOnLeaderboard)
+  ]
 
 open Lean Json in
 def FocusSession.toJson (s : FocusSession) : Json :=

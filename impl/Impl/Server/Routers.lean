@@ -5,6 +5,7 @@ import SWELibImpl.Networking.FastApi.Router
 import Impl.Server.Db
 import Impl.Server.Handlers.Health
 import Impl.Server.Handlers.Auth
+import Impl.Server.Handlers.Users
 
 /-!
 # Router Definitions
@@ -39,6 +40,9 @@ def authRouter : APIRouter := {
     { path := ⟨"/register"⟩, method := "POST", operationId := some "register" },
     { path := ⟨"/verify"⟩, method := "POST", operationId := some "verify_registration" },
     { path := ⟨"/login"⟩, method := "POST", operationId := some "login" },
+    { path := ⟨"/request-code"⟩, method := "POST", operationId := some "request_verification_code" },
+    { path := ⟨"/login-code"⟩, method := "POST", operationId := some "login_with_code" },
+    { path := ⟨"/change-password"⟩, method := "POST", operationId := some "change_password" },
     { path := ⟨"/forgot-password"⟩, method := "POST", operationId := some "forgot_password" },
     { path := ⟨"/reset-password"⟩, method := "POST", operationId := some "reset_password" }
   ]
@@ -51,6 +55,7 @@ def userRouter : APIRouter := {
   tags := ["users"]
   routes := [
     { path := ⟨"/me"⟩, method := "GET", operationId := some "get_current_user" },
+    { path := ⟨"/me"⟩, method := "PATCH", operationId := some "update_current_user" },
     { path := ⟨"/me"⟩, method := "DELETE", operationId := some "delete_current_user" }
   ]
 }
@@ -107,30 +112,34 @@ def stubHandler : HandlerFn := fun _req => do
   }
 
 /-- Register all route handlers in the callable registry.
-    Initially all handlers are stubs; they get replaced as we implement each domain. -/
+    Auth and User handlers are fully implemented; others are stubs. -/
 def buildRegistry (db : DbConn) : CallableRegistry :=
   let reg := CallableRegistry.empty
   -- Health
   let reg := reg.registerHandler (routeKey "GET" "/health") Handlers.Health.healthCheck
-  -- Auth
-  let reg := reg.registerHandler (routeKey "POST" "/auth/register") (Handlers.Auth.register db)
-  let reg := reg.registerHandler (routeKey "POST" "/auth/verify") stubHandler
-  let reg := reg.registerHandler (routeKey "POST" "/auth/login") stubHandler
-  let reg := reg.registerHandler (routeKey "POST" "/auth/forgot-password") stubHandler
-  let reg := reg.registerHandler (routeKey "POST" "/auth/reset-password") stubHandler
-  -- Users
-  let reg := reg.registerHandler (routeKey "GET" "/users/me") stubHandler
-  let reg := reg.registerHandler (routeKey "DELETE" "/users/me") stubHandler
-  -- Sessions
+  -- Auth (all implemented)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/register") (Handlers.Users.register db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/verify") (Handlers.Users.verifyRegistration db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/login") (Handlers.Users.login db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/request-code") (Handlers.Users.requestVerificationCode db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/login-code") (Handlers.Users.loginWithCode db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/change-password") (Handlers.Users.changePassword db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/forgot-password") (Handlers.Users.forgotPassword db)
+  let reg := reg.registerHandler (routeKey "POST" "/auth/reset-password") (Handlers.Users.resetPassword db)
+  -- Users (all implemented)
+  let reg := reg.registerHandler (routeKey "GET" "/users/me") (Handlers.Users.getMe db)
+  let reg := reg.registerHandler (routeKey "PATCH" "/users/me") (Handlers.Users.updateMe db)
+  let reg := reg.registerHandler (routeKey "DELETE" "/users/me") (Handlers.Users.deleteMe db)
+  -- Sessions (stubs)
   let reg := reg.registerHandler (routeKey "POST" "/sessions") stubHandler
   let reg := reg.registerHandler (routeKey "GET" "/sessions") stubHandler
   let reg := reg.registerHandler (routeKey "DELETE" "/sessions/{id}") stubHandler
-  -- Categories
+  -- Categories (stubs)
   let reg := reg.registerHandler (routeKey "POST" "/categories") stubHandler
   let reg := reg.registerHandler (routeKey "GET" "/categories") stubHandler
   let reg := reg.registerHandler (routeKey "PUT" "/categories/{name}") stubHandler
   let reg := reg.registerHandler (routeKey "DELETE" "/categories/{name}") stubHandler
-  -- Goals
+  -- Goals (stubs)
   let reg := reg.registerHandler (routeKey "POST" "/goals") stubHandler
   let reg := reg.registerHandler (routeKey "GET" "/goals") stubHandler
   let reg := reg.registerHandler (routeKey "PUT" "/goals/{id}") stubHandler
